@@ -1,0 +1,47 @@
+server:
+  port: 8080
+  undertow:
+    threads:
+      io: 4
+      worker: 500
+  compression:
+    enabled: true
+
+spring.mvc.cors:
+  mappings:
+    "[/**]":
+      allowed-origin-patterns: "*"
+      allowed-methods: "*"
+      allowed-headers: "*"
+      max-age: "1800"
+      allow-credentials: "true"
+
+spring:
+  application:
+    name: dy-like-example
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: "${SPRING_MYSQL_DATASOURCE_URL:jdbc:mysql://10.102.12.101:31098/sanbin?autoReconnect=true&useCompression=true&useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&allowMultiQueries=true&serverTimezone=GMT%2B8}"
+    username: "${SPRING_MYSQL_DATASOURCE_USERNAME:root}"
+    password: "${SPRING_MYSQL_DATASOURCE_PASSWORD:yNW79K}"
+    hikari:
+      connection-timeout: "${SPRING_MYSQL_HIKARI_CONNECTION_TIMEOUT:10000}"
+      idle-timeout: "${SPRING_MYSQL_HIKARI_IDLE_TIMEOUT:60000}"
+      max-lifetime: "${SPRING_MYSQL_HIKARI_MAX_LIFETIME:1800000}"
+      minimum-idle: "${SPRING_MYSQL_HIKARI_MINIMUM_IDLE:16}"
+      maximum-pool-size: "${SPRING_MYSQL_HIKARI_MAXIMUM_POOL_SIZE:32}"
+  thymeleaf:
+    cache: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '${METRICS_ENDPOINTS_EXPOSE:prometheus,health}'
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  config: classpath:logback.xml

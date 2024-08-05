@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket 压测页面</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/uuid/8.3.2/uuid.min.js"></script>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        .metrics { margin-top: 20px; }
+        .metric { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1 class="mt-4">WebSocket 压测页面</h1>
+
+    <div class="card mt-4">
+        <div class="card-header">
+            点赞压测
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label for="videoCount">模拟视频数:</label>
+                <input type="number" class="form-control" id="videoCount" name="videoCount" min="1" required>
+            </div>
+            <div class="form-group">
+                <label for="messageRate">点赞TPS:</label>
+                <input type="number" class="form-control" id="messageRate" name="messageRate" min="1" required>
+            </div>
+            <button id="startTest" class="btn btn-primary">点赞压测</button>
+
+            <div class="metrics mt-4">
+                <div class="metric">发送量: <span id="sentCount">0</span></div>
+                <div class="metric">接收量: <span id="receivedCount">0</span></div>
+                <div class="metric">延迟(ms): <span id="latency">0</span></div>
+                <div class="metric">当前QPS: <span id="qps">0</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">
+            查询压测
+        </div>
+        <div class="card-body">
+            <div class="form-group">
+                <label for="queryIds">UUID 列表 (每行一个):</label>
+                <textarea class="form-control" id="queryIds" rows="10"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="queryRate">查询QPS:</label>
+                <input type="number" class="form-control" id="queryRate" name="queryRate" min="1" required>
+            </div>
+            <button id="startQueryTest" class="btn btn-primary">查询压测</button>
+
+            <div class="metrics mt-4">
+                <div class="metric">发送量: <span id="querySentCount">0</span></div>
+                <div class="metric">接收量: <span id="queryReceivedCount">0</span></div>
+                <div class="metric">延迟(ms): <span id="queryLatency">0</span></div>
+                <div class="metric">当前QPS: <span id="queryQps">0</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let wsConnections = [];
+    const maxConnections = 5; // 最大WebSocket连接数
+    let sentCount = 0;
+    let receivedCount = 0;
+    let querySentCount = 0;
+    let queryReceivedCount = 0;
+    let intervalId;
+    let queryIntervalId;
+    let cmdId = 0;
+    let queryCmdId = 0;
+    let videoCount;
+    let messageRate;
+    let queryRate;
+    let videoIds = [];
+    let queryIds = [];
+    let startTime;
+    let queryStartTime;
+    const maxIntValue = 2147483647; // JavaScript 的最大 int 值
+
+    function connectWebSockets() {
+        for (let i = 0; i < maxConnections; i++) {
+            const ws = new WebSocket(`ws://${window.location.hostname}:${window.location.port}/api/ws`);
+            wsConnections.push(ws);
+            ws.onopen = () => {
+                console.log(`WebSocket 连接 ${i + 1} 已打开`);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (Array.isArray(data)) {
+                        // 处理 JSON 数组
+                        data.forEach(handleMessage);
+                    } else if (typeof data === 'object') {
+                        // 处理单个 JSON 对象
+                        handleMessage(data);
+                    } else {
+                        console.error('Unexpected data format:', event.data);
+                    }
+                } catch (error) {
+                    console.error('处理消息时发生错误:', error);
+                }
+            };
+
+            function handleMessage(message) {
+                if (message.cmdId !== undefined && message.ts !== undefined) {
+                    if (message.type === 'LIKE') {
+                        receivedCount += 1;
+                        document.getElementById('receivedCount').textContent = receivedCount;
+
+                        const latency = Date.now() - message.ts;
+                        document.getElementById('latency').textContent = latency;
+                    } else if (message.type === 'QUERY') {
+                        queryReceivedCount += 1;
+                        document.getElementById('queryReceivedCount').textContent = queryReceivedCount;
+
+                        const queryLatency = Date.now() - message.ts;
+                        document.getElementById('queryLatency').textContent = queryLatency;
+                    }
+                } else {
+                    console.error('数据结构错误：未包含 cmdId 或 ts');
+                }
+            }
+
+
+            ws.onclose = () => {
+                console.log(`WebSocket 连接 ${i + 1} 已关闭`);
+            };
+
+            ws.onerror = (error) => {
+                console.error(`WebSocket ${i + 1} 出现错误: ${error.message}`);
+                ws.close();
+            };
+        }
+    }
+
+    function startLikeTest() {
+        startTime = Date.now();
+        sentCount = 0;
+        receivedCount = 0;
+
+        videoIds = [];
+        for (let i = 0; i < videoCount; i++) {
+            videoIds.push(uuid.v1());
+        }
+
+        intervalId = setInterval(() => {
+            const now = Date.now();
+
+            for (let j = 0; j < videoCount; j++) {
+                let cmds = [];
+                for (let i = 0; i < messageRate; i++) {
+                    cmds.push({
+                        cmdId: cmdId,
+                        type: "LIKE",
+                        count: 1,
+                        vId: videoIds[j],
+                        ts: now // 添加时间戳
+                    });
+                }
+
+                cmdId = (cmdId + 1) > maxIntValue ? 0 : (cmdId + 1);
+
+                if (cmds.length > 0) {
+                    const message = JSON.stringify({ cmds: cmds });
+                    const wsIndex = (j % maxConnections);
+                    wsConnections[wsIndex].send(message);
+                    sentCount += cmds.length;
+                }
+            }
+
+            document.getElementById('sentCount').textContent = sentCount;
+
+            const elapsedTimeInSeconds = (Date.now() - startTime) / 1000;
+            const qps = (sentCount / elapsedTimeInSeconds).toFixed(2);
+            document.getElementById('qps').textContent = qps;
+        }, 1000);
+    }
+
+    function startQueryTest() {
+        queryStartTime = Date.now();
+        querySentCount = 0;
+        queryReceivedCount = 0;
+
+        queryIds = document.getElementById('queryIds').value.split('\n').filter(id => id.trim() !== '');
+
+        queryIntervalId = setInterval(() => {
+            const now = Date.now();
+
+            queryIds.forEach((id, index) => {
+                let cmds = [];
+
+                for (let i = 0; i < queryRate; i++) {
+                    cmds.push({
+                        cmdId: queryCmdId,
+                        type: "QUERY",
+                        vId: id.trim(),
+                        ts: now
+                    });
+
+                    queryCmdId = (queryCmdId + 1) > maxIntValue ? 0 : (queryCmdId + 1);
+                }
+
+                if (cmds.length > 0) {
+                    const message = JSON.stringify({ cmds: cmds });
+                    const wsIndex = index % maxConnections; // 使用UUID的索引决定WebSocket连接
+                    wsConnections[wsIndex].send(message);
+                    querySentCount += cmds.length;
+                }
+            });
+
+            document.getElementById('querySentCount').textContent = querySentCount;
+
+            const elapsedTimeInSeconds = (Date.now() - queryStartTime) / 1000;
+            const queryQps = (querySentCount / elapsedTimeInSeconds).toFixed(2);
+            document.getElementById('queryQps').textContent = queryQps;
+        }, 1000);
+    }
+
+    document.getElementById('startTest').addEventListener('click', () => {
+        videoCount = parseInt(document.getElementById('videoCount').value);
+        messageRate = parseInt(document.getElementById('messageRate').value);
+        if (isNaN(videoCount) || isNaN(messageRate) || videoCount <= 0 || messageRate <= 0) {
+            alert('请填写有效的模拟视频数和点赞TPS！');
+            return;
+        }
+
+        connectWebSockets();
+        startLikeTest();
+    });
+
+    document.getElementById('startQueryTest').addEventListener('click', () => {
+        queryRate = parseInt(document.getElementById('queryRate').value);
+
+        if (isNaN(queryRate) || queryRate <= 0) {
+            alert('请填写有效的查询QPS！');
+            return;
+        }
+
+        connectWebSockets();
+        startQueryTest();
+    });
+</script>
+</body>
+</html>

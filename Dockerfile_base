@@ -1,0 +1,6 @@
+FROM registry.cn-hangzhou.aliyuncs.com/sanbin/maven3.9.3-jdk17:latest as base
+WORKDIR /app
+COPY . .
+RUN mvn -s settings_default.xml -U -B -T 0.8C clean install -DskipTests
+RUN rm -rf *
+
