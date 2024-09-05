@@ -19,4 +19,5 @@
 
 ## 社群的加入方式
 在知识星球搜索【三丙开源社区】
+![输入图片说明](src/main/resources/templates/gitee_qr_code.jpg)
 
